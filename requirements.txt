@@ -1,0 +1,28 @@
+# Flask相关
+flask>=2.3.0
+flask-cors>=4.0.0
+
+# HTTP请求
+requests>=2.31.0
+aiohttp>=3.9.0
+
+# 图像处理
+opencv-python>=4.8.0
+pillow>=10.0.0
+numpy>=1.24.0
+
+# OCR识别
+pytesseract>=0.3.10
+
+# 自动化
+pyautogui>=0.9.54
+
+# Windows系统操作
+pywin32>=306; sys_platform == 'win32'
+
+# WebSocket（可选功能）
+websocket-client>=1.6.0
+
+# 性能监控
+psutil>=5.9.0
+

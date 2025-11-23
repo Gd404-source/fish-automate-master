@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IP Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    async function fetchIPs() {
+      const response = await fetch('/api/ips');
+      const ips = await response.json();
+      const list = document.getElementById('ip-list');
+      list.innerHTML = '';
+      ips.forEach(item => {
+        const listItem = document.createElement('li');
+        listItem.className = "bg-gray-100 px-4 py-3 rounded-lg shadow-sm my-2";
+        listItem.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="text-gray-800 font-medium">${item.ip} - ${item.pc_name}</span>
+            <div class="flex items-center space-x-2">
+              <button class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600" onclick="testConnection('${item.ip}')">Test</button>
+              <button class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600" onclick="sendRequest('${item.ip}')">Send</button>
+              <button class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600" onclick="deleteIP('${item.ip}')">Delete</button>
+              <button class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600" onclick="copyInfo('${item.ip}', '${item.pc_name}')">Copy</button>
+            </div>
+          </div>
+          <div id="status-${item.ip}" class="mt-2 text-sm font-medium text-gray-600">[Idle]</div>
+        `;
+        list.prepend(listItem);
+      });
+    }
+
+    // 每 10 秒刷新一次 IP 列表 REFRESH PAGE 
+    // setInterval(fetchIPs, 10000);
+
+    let isRefreshing = true;
+    let refreshInterval = setInterval(fetchIPs, 10000);
+
+    function toggleRefresh(btn) {
+      if (isRefreshing) {
+        clearInterval(refreshInterval);
+        btn.textContent = 'ON REFRESH';
+        btn.classList.replace('bg-blue-500', 'bg-green-500');
+      } else {
+        refreshInterval = setInterval(fetchIPs, 10000);
+        btn.textContent = 'STOP REFRESH';
+        btn.classList.replace('bg-green-500', 'bg-blue-500');
+      }
+      isRefreshing = !isRefreshing;
+    }
+
+    // 检查服务器 IP 是否为预期的 192.168.0.255
+    async function checkServerIP() {
+      try {
+        const response = await fetch('/api/server_info');
+        const serverInfo = await response.json();
+        if (!serverInfo.is_correct) {
+          alert(`警告：主机 IP 不正确！当前主机 IP 列表: ${serverInfo.server_ips.join(', ')}`);
+        }
+      } catch (error) {
+        console.error("无法获取主机信息", error);
+      }
+    }
+
+    // 获取用户选择的按键，默认 F7
+    function getSelectedKey() {
+      const key = document.getElementById('key-input').value.trim();
+      return key ? key : "F7";
+    }
+
+    async function addIP() {
+      const ip = document.getElementById('ip-input').value;
+      // 获取 PC 名称，如果为空，则使用默认值
+      const pcName = document.getElementById('pc-name-input').value.trim() || "Default-PC";
+      if (!ip) return alert('Please enter an IP address');
+      await fetch('/api/ips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: ip, pc_name: pcName })
+      });
+      document.getElementById('ip-input').value = '';
+      document.getElementById('pc-name-input').value = '';
+      fetchIPs();
+    }
+
+    async function deleteIP(ip) {
+      await fetch(`/api/ips/${ip}`, { method: 'DELETE' });
+      fetchIPs();
+    }
+
+    async function sendRequest(ip) {
+      const statusElement = document.getElementById(`status-${ip}`);
+      statusElement.textContent = '[Sending...]';
+      statusElement.className = "mt-2 text-sm font-medium text-blue-500";
+      const key = getSelectedKey();
+      try {
+        const response = await fetch(`/api/send/${ip}`, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: key })
+        });
+        const result = await response.json();
+        if (result.status === 'success') {
+          statusElement.textContent = '[Success]';
+          statusElement.className = "mt-2 text-sm font-medium text-green-500";
+        } else {
+          statusElement.textContent = `[Error: ${result.message}]`;
+          statusElement.className = "mt-2 text-sm font-medium text-red-500";
+        }
+      } catch (error) {
+        statusElement.textContent = '[Error: Network Issue]';
+        statusElement.className = "mt-2 text-sm font-medium text-red-500";
+      }
+    }
+
+    async function testConnection(ip) {
+      const statusElement = document.getElementById(`status-${ip}`);
+      statusElement.textContent = '[Testing...]';
+      statusElement.className = "mt-2 text-sm font-medium text-blue-500";
+      try {
+        const response = await fetch(`/api/test/${ip}`, { method: 'GET' });
+        const result = await response.json();
+        if (result.status === 'success') {
+          statusElement.textContent = '[Connected]';
+          statusElement.className = "mt-2 text-sm font-medium text-green-500";
+        } else {
+          statusElement.textContent = `[Error: ${result.message}]`;
+          statusElement.className = "mt-2 text-sm font-medium text-red-500";
+        }
+      } catch (error) {
+        statusElement.textContent = '[Error: Network Issue]';
+        statusElement.className = "mt-2 text-sm font-medium text-red-500";
+      }
+    }
+
+    async function sendAll() {
+      const ipsResponse = await fetch('/api/ips');
+      const ips = await ipsResponse.json();
+      ips.forEach(item => {
+        const statusElement = document.getElementById(`status-${item.ip}`);
+        if (statusElement) {
+          statusElement.textContent = '[Sending to All...]';
+          statusElement.className = "mt-2 text-sm font-medium text-blue-500";
+        }
+      });
+      const key = getSelectedKey();
+      try {
+        const response = await fetch('/api/send_all', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: key })
+        });
+        const results = await response.json();
+        results.forEach(result => {
+          const statusElement = document.getElementById(`status-${result.ip}`);
+          if (statusElement) {
+            if (result.status === 'success') {
+              statusElement.textContent = '[Success]';
+              statusElement.className = "mt-2 text-sm font-medium text-green-500";
+            } else {
+              statusElement.textContent = `[Error: ${result.message}]`;
+              statusElement.className = "mt-2 text-sm font-medium text-red-500";
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Network error when sending to all:", error);
+        ips.forEach(item => {
+          const statusElement = document.getElementById(`status-${item.ip}`);
+          if (statusElement) {
+            statusElement.textContent = '[Error: Network Issue]';
+            statusElement.className = "mt-2 text-sm font-medium text-red-500";
+          }
+        });
+      }
+    }
+
+    async function testAll() {
+      const ipsResponse = await fetch('/api/ips');
+      const ips = await ipsResponse.json();
+      ips.forEach(item => {
+        const statusElement = document.getElementById(`status-${item.ip}`);
+        if (statusElement) {
+          statusElement.textContent = '[Testing All...]';
+          statusElement.className = "mt-2 text-sm font-medium text-blue-500";
+        }
+      });
+      try {
+        const response = await fetch('/api/test_all', { method: 'GET' });
+        const results = await response.json();
+        results.forEach(result => {
+          const statusElement = document.getElementById(`status-${result.ip}`);
+          if (statusElement) {
+            if (result.status === 'success') {
+              statusElement.textContent = '[Connected]';
+              statusElement.className = "mt-2 text-sm font-medium text-green-500";
+            } else {
+              statusElement.textContent = `[Error: ${result.message}]`;
+              statusElement.className = "mt-2 text-sm font-medium text-red-500";
+            }
+          }
+        });
+      } catch (error) {
+        console.error("Network error when testing all:", error);
+        ips.forEach(item => {
+          const statusElement = document.getElementById(`status-${item.ip}`);
+          if (statusElement) {
+            statusElement.textContent = '[Error: Network Issue]';
+            statusElement.className = "mt-2 text-sm font-medium text-red-500";
+          }
+        });
+      }
+    }
+
+    // 复制 IP 与 PC 名称信息到剪贴板
+    function copyInfo(ip, pcName) {
+      const text = `IP: ${ip} - PC Name: ${pcName}`;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('Copied: ' + text);
+      }).catch(err => {
+        console.error('Copy failed:', err);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchIPs();
+      checkServerIP();
+    });
+
+
+  </script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-3xl bg-white p-6 rounded-lg shadow-lg">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">IP Manager</h1>
+
+    
+    
+    <!-- 按键选择输入框 -->
+    <!-- <div class="flex justify-between items-center mb-4">
+      <div class="w-[80%] h-max">
+        <label for="key-input" class="block text-gray-700 font-medium mb-1">选择按键 (默认 F7):</label>
+        <input 
+          type="text" 
+          id="key-input" 
+          placeholder="F7" 
+          value="F7"
+          class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+        />
+      </div>
+      <div class="w-[20%] h-max flex items-bottom">
+        <button id="toggle-refresh-btn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">REFRESH PAGE</button>
+      </div>
+    </div> -->
+
+    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-6">
+      <!-- 输入框部分，自适应宽度 -->
+      <div class="flex-1">
+        <label for="key-input" class="block text-gray-700 font-medium mb-1">选择按键 (默认 F7):</label>
+        <input 
+          type="text" 
+          id="key-input" 
+          placeholder="F7" 
+          value="F7"
+          class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+        />
+      </div>
+    
+      <!-- 按钮部分，固定宽度 -->
+      <button id="toggle-refresh-btn" class="w-full md:w-auto px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition" onclick="toggleRefresh(this)">
+        STOP REFRESH
+      </button>
+    </div>
+    
+    
+    <div class="flex items-center space-x-4 mb-6">
+      <input 
+        type="text" 
+        id="ip-input" 
+        placeholder="Enter IP Address" 
+        class="w-1/2 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+      />
+      <input 
+        type="text" 
+        id="pc-name-input" 
+        placeholder="PC Name (optional)" 
+        class="w-1/2 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+      />
+      <button 
+        onclick="addIP()" 
+        class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 transition">
+        Add
+      </button>
+    </div>
+    <div class="flex items-center justify-between mb-6">
+      <button 
+        onclick="sendAll()" 
+        class="w-1/2 bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition mr-2">
+        Send to All
+      </button>
+      <button 
+        onclick="testAll()" 
+        class="w-1/2 bg-yellow-500 text-white px-6 py-3 rounded-lg hover:bg-yellow-600 transition ml-2">
+        Test All
+      </button>
+    </div>
+    <ul id="ip-list" class="space-y-2">
+      <!-- IP 列表会动态添加 -->
+    </ul>
+  </div>
+</body>
+</html>

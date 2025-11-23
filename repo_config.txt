@@ -1,0 +1,4 @@
+github_username=oioioi92
+repo_name=fish-automate
+branch_name=master
+
